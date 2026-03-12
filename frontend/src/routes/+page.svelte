@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fade, slide } from 'svelte/transition';
+	import { simulateMeetingGeneration } from '$lib/simulation';
 
 	// State definitions
 	type AppState = 'landing' | 'setup' | 'generating' | 'session' | 'summary';
@@ -69,75 +70,23 @@
 		if (!topic.trim()) return;
 
 		currentState = 'generating';
-		generationStatusMessage = 'Инициализация нейросети...';
+		generationStatusMessage = 'Инициализация...';
 
 		try {
-			const res = await fetch('/api/generate-meeting', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ topic, keyPoints, duration })
-			});
+			const stream = simulateMeetingGeneration(topic, keyPoints, duration);
 
-			if (!res.body) throw new Error('No response body');
-
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder('utf-8');
-			let buffer = '';
-
-			let isReading = true;
-			while (isReading) {
-				const { value, done } = await reader.read();
-				if (done) {
-					isReading = false;
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-
-				// Parse SSE parts (handle both \n\n and \r\n\r\n)
-				const lines = buffer.split(/\n\n|\r\n\r\n/);
-				buffer = lines.pop() || '';
-
-				for (const chunk of lines) {
-					if (!chunk.trim()) continue;
-
-					const chunkLines = chunk.split(/\n|\r\n/);
-					let eventName = '';
-					let eventData = '';
-
-					for (const l of chunkLines) {
-						if (l.startsWith('event:')) eventName = l.substring(6).trim();
-						if (l.startsWith('data:')) eventData = l.substring(5).trim();
-					}
-
-					console.log(`[SSE] Received event: ${eventName}, data length: ${eventData.length}`);
-
-					if (eventName && eventData) {
-						if (eventName === 'status') {
-							generationStatusMessage = eventData;
-						} else if (eventName === 'complete') {
-							try {
-								console.log('[SSE] Parsing complete JSON...');
-								meetingData = JSON.parse(eventData);
-								console.log('[SSE] Meeting data loaded:', meetingData);
-								timeRemaining = duration * 60;
-								currentState = 'session';
-								isReading = false;
-							} catch (err) {
-								console.error('[SSE] Failed to parse complete JSON:', err);
-								generationStatusMessage = 'Ошибка обработки данных от ИИ: ' + err;
-								setTimeout(() => (currentState = 'setup'), 5000);
-							}
-						} else if (eventName === 'error') {
-							generationStatusMessage = `Ошибка: ${eventData}`;
-							setTimeout(() => (currentState = 'setup'), 5000);
-						}
-					}
+			for await (const chunk of stream) {
+				if (chunk.event === 'status') {
+					generationStatusMessage = chunk.data;
+				} else if (chunk.event === 'complete') {
+					meetingData = JSON.parse(chunk.data);
+					timeRemaining = duration * 60;
+					currentState = 'session';
 				}
 			}
 		} catch (e) {
 			console.error(e);
-			generationStatusMessage = 'Произошла ошибка при подключении к бекенду.';
+			generationStatusMessage = 'Произошла ошибка при генерации.';
 			setTimeout(() => (currentState = 'setup'), 3000);
 		}
 	}
@@ -173,234 +122,347 @@
 	}
 </script>
 
-<div class="animate-in fade-in space-y-8 duration-500">
+<div class="animate-in fade-in space-y-12 duration-700">
 	{#if currentState === 'landing'}
-		<div class="flex flex-col items-center justify-center px-4 py-20 text-center md:py-32" in:fade>
-			<div
-				class="bg-brand-blue/10 text-brand-blue border-brand-blue/20 mb-8 inline-flex items-center gap-2 rounded-full border px-4 py-2 font-semibold"
-			>
-				<span class="relative flex h-3 w-3">
+		<div class="flex flex-col items-center justify-center px-4 py-24 text-center md:py-40" in:fade>
+			<!-- App Status Badge -->
+			<div class="-mt-12 mb-8 flex flex-col items-center gap-4">
+				<div
+					class="inline-flex items-center justify-center gap-3 rounded-[32px] border border-white/10 bg-white/5 px-5 py-2.5 saturate-150 backdrop-blur-xl"
+				>
 					<span
-						class="bg-brand-blue absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+						class="bg-brand-blue h-2.5 w-2.5 animate-pulse rounded-full shadow-[0_0_12px_rgba(59,130,246,0.8)]"
 					></span>
-					<span class="bg-brand-blue relative inline-flex h-3 w-3 rounded-full"></span>
-				</span>
-				Powered by AI
+					<span class="text-sm font-medium tracking-[0.05em] text-white/70 uppercase"
+						>AI-Редактор Планирования</span
+					>
+				</div>
 			</div>
 
 			<h1
-				class="mb-6 text-5xl leading-tight font-extrabold tracking-tight text-gray-900 md:text-7xl"
+				class="font-jakarta mb-4 flex flex-wrap items-baseline justify-center text-5xl leading-none font-black tracking-tight text-white md:text-7xl lg:text-8xl"
 			>
-				Превратите обсуждения в <br />
-				<span class="from-brand-blue to-brand-mint bg-gradient-to-r bg-clip-text text-transparent"
-					>реальные результаты</span
-				>
+				<span class="relative flex items-baseline">
+					<span
+						class="bg-brand-blue/10 absolute -inset-10 -z-10 animate-pulse rounded-full blur-[100px]"
+					></span>
+					<span
+						class="bg-gradient-to-b from-[#F8FAFC] via-[#E0F2FE] to-[#94A3B8] bg-clip-text text-transparent"
+						>TimeWave</span
+					>
+					<span class="text-shimmer-blue ml-2">AI</span>
+				</span>
 			</h1>
 
-			<p class="mx-auto mb-12 max-w-3xl text-xl text-gray-500 md:text-2xl">
-				Сконцентрируйтесь на развитии проекта. ИИ сам создаст жесткие таймбоксы, составит вопросы и
-				подберет идеальную механику взаимодействия для вашей команды и стейкхолдеров.
+			<!-- Sub-titles and social -->
+			<div class="mb-12 flex flex-col items-center gap-2">
+				<span class="text-[12px] font-medium tracking-[0.2em] text-white/30 uppercase"
+					>Conceptual Demo</span
+				>
+				<a
+					href="https://github.com/Piryutko"
+					target="_blank"
+					class="text-shimmer-blue text-[11px] font-medium tracking-[0.2em] uppercase transition-opacity hover:opacity-80"
+				>
+					github.com/Piryutko
+				</a>
+			</div>
+
+			<p
+				class="mx-auto mb-16 max-w-2xl text-[21px] leading-relaxed font-medium tracking-wide text-white/50"
+			>
+				Испытайте новое поколение управления проектами.<br /> Система автономно координирует структуру
+				встреч, таймбоксы и динамику команды с математической точностью.
 			</p>
 
-			<div class="flex flex-col gap-4 sm:flex-row">
-				<button
-					onclick={() => (currentState = 'setup')}
-					class="bg-brand-blue flex items-center gap-2 rounded-xl px-8 py-4 text-lg font-bold text-white shadow-lg transition-all hover:-translate-y-1 hover:shadow-xl"
-				>
-					Начать работу
-					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M14 5l7 7m0 0l-7 7m7-7H3"
-						></path></svg
+			<div class="mb-16 flex flex-col items-center gap-8">
+				<div class="flex flex-col items-center gap-6 sm:flex-row">
+					<button
+						onclick={() => (currentState = 'setup')}
+						class="group border-brand-blue/50 hover:border-brand-blue hover:bg-brand-blue/10 relative overflow-hidden rounded-[32px] border-2 bg-white/5 px-10 py-5 text-sm font-black tracking-[0.2em] text-white uppercase backdrop-blur-xl transition-all hover:shadow-[0_0_50px_rgba(59,130,246,0.3)] active:scale-95"
 					>
-				</button>
+						<span class="relative z-10 flex items-center gap-3">
+							Начать работу
+							<svg
+								class="text-brand-blue h-4 w-4 transition-transform group-hover:translate-x-1"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+								><path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="3"
+									d="M13 7l5 5m0 0l-5 5m5-5H6"
+								/></svg
+							>
+						</span>
+						<div
+							class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform group-hover:animate-[shimmer_1.5s_infinite]"
+						></div>
+					</button>
+				</div>
 			</div>
 		</div>
 	{:else if currentState === 'setup'}
-		<div class="glass-panel mx-auto mt-10 max-w-2xl rounded-3xl p-8 md:p-12" in:fade>
-			<div class="mb-10 text-center">
-				<h2 class="mb-2 text-3xl font-extrabold text-gray-900">Новая сессия</h2>
-				<p class="text-gray-500">Настройте контекст встречи, а ИИ сгенерирует план и механику.</p>
+		<div
+			class="glass-panel relative mx-auto mt-20 max-w-2xl overflow-hidden rounded-[40px] p-12 md:p-16"
+			in:fade
+		>
+			<!-- Decorative corner glow -->
+			<div
+				class="bg-brand-blue/10 absolute -top-20 -right-20 h-40 w-40 rounded-full blur-3xl"
+			></div>
+
+			<div class="relative z-10 mb-12">
+				<span class="text-brand-blue mb-4 block text-[10px] font-black tracking-[0.4em] uppercase"
+					>Новая Сессия</span
+				>
+				<h2 class="mb-3 text-4xl font-extrabold tracking-tight text-white">Конфигурация</h2>
+				<p class="font-medium tracking-wide text-white/40">
+					Определите параметры вашей встречи, чтобы инициализировать Wave Engine.
+				</p>
 			</div>
 
 			<form
-				class="space-y-6"
+				class="relative z-10 space-y-8"
 				onsubmit={(e) => {
 					e.preventDefault();
 					startGeneration();
 				}}
 			>
-				<div>
-					<label for="topic" class="mb-2 block text-sm font-semibold text-gray-700"
-						>Тема Встречи *</label
+				<div class="space-y-3">
+					<label
+						for="topic"
+						class="ml-1 text-[10px] font-black tracking-[0.3em] text-white/40 uppercase"
+						>Тема Встречи</label
 					>
 					<input
 						id="topic"
 						type="text"
 						bind:value={topic}
 						required
-						class="focus:border-brand-blue focus:ring-brand-blue w-full rounded-xl border-gray-300 px-4 py-3 shadow-sm transition-all sm:text-lg"
-						placeholder="Например: Архитектура API"
+						class="focus:border-brand-blue/50 w-full rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-4 text-lg font-medium text-white transition-all placeholder:text-white/10 focus:bg-white/[0.05] focus:outline-none"
+						placeholder="например: Обзор архитектуры API"
 					/>
 				</div>
 
-				<div>
-					<label for="keyPoints" class="mb-2 block text-sm font-semibold text-gray-700"
-						>Ключевые тезисы (один на строку)</label
+				<div class="space-y-3">
+					<label
+						for="keyPoints"
+						class="ml-1 text-[10px] font-black tracking-[0.3em] text-white/40 uppercase"
+						>Ключевые Области (Разделяйте строками)</label
 					>
 					<textarea
 						id="keyPoints"
 						bind:value={keyPoints}
-						rows="3"
-						class="focus:border-brand-blue focus:ring-brand-blue sm:text-md w-full rounded-xl border-gray-300 px-4 py-3 shadow-sm transition-all"
-						placeholder="- Утвердить формат JSON&#10;- Распределить задачи на спринт"
+						rows="4"
+						class="focus:border-brand-blue/50 w-full rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-4 leading-relaxed font-medium text-white transition-all placeholder:text-white/10 focus:bg-white/[0.05] focus:outline-none"
+						placeholder="- Валидация JSON схемы&#10;- Стратегия лимитирования запросов"
 					></textarea>
 				</div>
 
-				<div>
-					<label for="duration" class="mb-2 block text-sm font-semibold text-gray-700"
-						>Длительность (в минутах)</label
-					>
-					<div class="flex items-center gap-4">
-						<input
-							id="duration"
-							type="range"
-							bind:value={duration}
-							min="5"
-							max="120"
-							step="5"
-							class="accent-brand-blue h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-						/>
-						<span class="text-brand-blue w-12 text-right text-xl font-bold">{duration}</span>
+				<div class="space-y-6">
+					<div class="ml-1 flex items-center justify-between">
+						<label
+							for="duration"
+							class="text-[10px] font-black tracking-[0.3em] text-white/40 uppercase"
+							>Распределение Времени</label
+						>
+						<span class="text-brand-blue text-sm font-black tracking-widest">{duration} МИН</span>
 					</div>
+					<input
+						id="duration"
+						type="range"
+						bind:value={duration}
+						min="5"
+						max="120"
+						step="5"
+						class="accent-brand-blue h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-white/5"
+					/>
 				</div>
 
 				<div class="pt-6">
 					<button
 						type="submit"
-						class="from-brand-blue focus:ring-brand-blue flex w-full transform items-center justify-center rounded-xl border border-transparent bg-gradient-to-r to-teal-500 px-8 py-4 text-lg font-bold text-white shadow-md transition-all hover:-translate-y-1 hover:from-blue-700 hover:to-teal-600 focus:ring-2 focus:ring-offset-2 focus:outline-none"
+						class="hover:bg-brand-blue w-full rounded-2xl bg-white py-5 text-sm font-black tracking-[0.3em] text-black uppercase shadow-[0_0_30px_rgba(255,255,255,0.05)] transition-all hover:text-white active:scale-[0.98]"
 					>
-						Сгенерировать План
+						Обработать и Создать
 					</button>
 				</div>
 			</form>
 		</div>
 	{:else if currentState === 'generating'}
-		<div class="flex flex-col items-center justify-center py-32" in:fade>
-			<div class="relative mb-8 h-24 w-24">
-				<div class="border-brand-mint/20 absolute inset-0 rounded-full border-4"></div>
+		<div class="flex flex-col items-center justify-center py-48" in:fade>
+			<div class="relative mb-12 h-32 w-32">
+				<div class="absolute inset-0 rounded-full border-2 border-white/5"></div>
 				<div
-					class="border-brand-mint absolute inset-0 animate-spin rounded-full border-4 border-t-transparent"
+					class="border-t-brand-blue absolute inset-0 animate-spin rounded-full border-2 shadow-[0_0_20px_rgba(59,130,246,0.3)]"
 				></div>
+				<!-- Center pulse -->
+				<div class="absolute inset-0 flex items-center justify-center">
+					<div class="bg-brand-blue h-2 w-2 animate-ping rounded-full"></div>
+				</div>
 			</div>
-			<h2
-				class="from-brand-blue bg-gradient-to-r to-teal-500 bg-clip-text text-2xl font-bold text-transparent"
+
+			<span class="text-brand-blue mb-4 text-[10px] font-black tracking-[0.5em] uppercase"
+				>{generationStatusMessage}</span
 			>
-				{generationStatusMessage}
-			</h2>
-			<p class="mt-2 text-gray-500">Нейросеть анализирует ваши тезисы...</p>
+			<h2 class="text-3xl font-extrabold tracking-tight text-white">Оркестрация Логики...</h2>
 		</div>
 	{:else if currentState === 'session' && meetingData}
-		<div class="grid grid-cols-1 gap-8 lg:grid-cols-3" in:fade>
+		<div class="grid grid-cols-1 gap-10 lg:grid-cols-12" in:fade>
 			<!-- Left Column: Timer & Timeboxes -->
-			<div class="space-y-6 lg:col-span-2">
+			<div class="space-y-10 lg:col-span-8">
 				<!-- Main Timer Glass Panel -->
-				<div class="glass-panel flex flex-col overflow-hidden rounded-3xl shadow-lg md:flex-row">
+				<div class="glass-panel relative flex flex-col overflow-hidden rounded-[40px] md:flex-row">
+					<!-- Active State Indicator -->
 					<div
-						class="flex flex-col items-center justify-center border-b border-gray-200 bg-white/40 p-10 md:w-1/2 md:border-r md:border-b-0"
+						class="bg-brand-blue/10 border-brand-blue/20 absolute top-6 left-6 flex items-center gap-3 rounded-full border px-4 py-2"
 					>
-						<span class="mb-2 text-sm font-bold tracking-widest text-gray-500 uppercase"
-							>Остаток Времени</span
+						<span class="bg-brand-blue h-2 w-2 animate-pulse rounded-full"></span>
+						<span class="text-brand-blue text-[9px] font-black tracking-widest uppercase"
+							>Движок Активен</span
+						>
+					</div>
+
+					<div
+						class="flex flex-col items-center justify-center border-b border-white/5 bg-white/[0.02] p-20 md:w-1/2 md:border-r md:border-b-0"
+					>
+						<span class="mb-6 text-[10px] font-medium tracking-[0.4em] text-white/30 uppercase"
+							>Оставшееся Время</span
 						>
 						<div
-							class="font-mono text-7xl font-black tracking-tighter text-gray-900 md:text-8xl"
+							class="relative font-mono text-8xl font-black tracking-tighter text-white md:text-9xl"
 							class:text-red-500={timeRemaining < 60 && timeRemaining > 0}
 						>
 							{formattedTime}
+							{#if isTimerRunning}
+								<div
+									class="bg-brand-blue/5 absolute -inset-4 -z-10 animate-pulse rounded-3xl blur-2xl"
+								></div>
+							{/if}
 						</div>
-						<div class="mt-8 flex gap-4">
+
+						<div class="mt-12 flex gap-6">
 							<button
 								onclick={toggleTimer}
-								class="transform rounded-full px-8 py-3 text-lg font-bold text-white shadow-md transition-all hover:scale-105 {isTimerRunning
-									? 'bg-amber-500 hover:bg-amber-600'
-									: 'bg-brand-mint hover:bg-emerald-600'}"
+								class="group relative overflow-hidden rounded-2xl px-10 py-4 text-[11px] font-black tracking-[0.2em] uppercase transition-all active:scale-95 {isTimerRunning
+									? 'border border-white/10 bg-white/10 text-white hover:bg-white/20'
+									: 'bg-brand-blue text-white shadow-[0_0_30px_rgba(59,130,246,0.3)] hover:shadow-[0_0_50px_rgba(59,130,246,0.5)]'}"
 							>
-								{isTimerRunning ? 'Пауза' : 'Старт'}
+								{isTimerRunning ? 'Приостановить' : 'Продолжить'}
 							</button>
 							<button
 								onclick={finishSession}
 								disabled={!hasStarted}
-								class="transform rounded-full bg-gray-800 px-8 py-3 text-lg font-bold text-white shadow-md transition-all enabled:hover:scale-105 enabled:hover:bg-black disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale"
+								class="rounded-2xl border border-white/10 bg-white/5 px-10 py-4 text-[11px] font-black tracking-[0.2em] text-white/40 uppercase transition-all enabled:hover:bg-white/10 enabled:hover:text-white disabled:opacity-20"
 							>
 								Завершить
 							</button>
 						</div>
 					</div>
-					<div class="p-8 md:w-1/2">
-						<div class="mb-4">
-							<h3 class="text-brand-blue font-bold">Манифест:</h3>
-							<p class="mt-1 text-lg leading-relaxed text-gray-700 italic">
+					<div class="flex flex-col justify-center p-12 md:w-1/2">
+						<div class="mb-10">
+							<span
+								class="text-brand-blue mb-4 block text-[12px] font-black tracking-[0.2em] uppercase"
+								>Манифест</span
+							>
+							<p class="text-2xl leading-tight font-medium tracking-tight text-white italic">
 								«{meetingData.structure.manifesto}»
 							</p>
 						</div>
-						<div class="mt-6">
-							<h3 class="text-brand-blue mb-3 font-bold">Главная цель:</h3>
-							<p class="text-xl leading-tight font-medium text-gray-900">
-								💎 {meetingData.intentionality.goal}
-							</p>
+						<div>
+							<span
+								class="text-brand-blue mb-4 block text-[12px] font-black tracking-[0.2em] uppercase"
+								>Стратегическая Цель</span
+							>
+							<h2 class="text-3xl font-black tracking-tight text-white">
+								{meetingData.intentionality.goal}
+							</h2>
 						</div>
 					</div>
 				</div>
 
 				<!-- TimeBoxes -->
-				<div class="glass-panel rounded-3xl p-8">
-					<h3 class="mb-6 flex items-center gap-2 text-xl font-bold">
-						<div class="bg-brand-blue h-3 w-3 rounded-full"></div>
-						Дорожная Карта
-					</h3>
-					<div class="space-y-3">
+				<div class="glass-panel rounded-[40px] p-12">
+					<div class="mb-10 flex items-center justify-between">
+						<div>
+							<h3 class="mb-1 text-2xl font-black tracking-tight text-white">
+								Пайплайн Выполнения
+							</h3>
+							<p class="text-[10px] font-medium tracking-[0.4em] text-white/30 uppercase">
+								Процедурные шаги
+							</p>
+						</div>
+
+						<div
+							class="flex h-1 h-12 w-12 items-center justify-center rounded-2xl border border-white/10"
+						>
+							<svg
+								class="h-6 w-6 text-white/20"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+								><path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+								></path></svg
+							>
+						</div>
+					</div>
+					<div class="space-y-4">
 						{#each meetingData.structure.timeBoxes as box, i}
 							<button
-								class="flex w-full cursor-pointer items-center justify-between rounded-xl border p-4 text-left transition-all {box.isCompleted
-									? 'border-gray-200 bg-gray-100 opacity-60'
-									: 'border-brand-blue/30 hover:border-brand-blue bg-white shadow-sm'}"
+								class="group relative flex w-full cursor-pointer items-center justify-between overflow-hidden rounded-3xl border px-8 py-6 text-left transition-all {box.isCompleted
+									? 'border-white/5 bg-white/[0.01] opacity-30 grayscale'
+									: 'hover:border-brand-blue/50 border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'}"
 								onclick={() => completeTimeBox(i)}
-								aria-label="Toggle task completion"
 							>
-								<div class="flex items-center gap-4">
+								<div class="relative z-10 flex items-center gap-6">
 									<div
-										class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 {box.isCompleted
-											? 'border-gray-400 bg-gray-400'
-											: 'border-gray-300'}"
+										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition-all {box.isCompleted
+											? 'border-brand-blue bg-brand-blue'
+											: 'group-hover:border-brand-blue/50 border-white/10'}"
 									>
 										{#if box.isCompleted}
 											<svg
-												class="h-4 w-4 text-white"
+												class="h-5 w-5 text-black"
 												fill="none"
 												viewBox="0 0 24 24"
 												stroke="currentColor"
 												><path
 													stroke-linecap="round"
 													stroke-linejoin="round"
-													stroke-width="2"
+													stroke-width="4"
 													d="M5 13l4 4L19 7"
 												></path></svg
 											>
 										{/if}
 									</div>
-									<span
-										class="text-lg font-bold {box.isCompleted
-											? 'text-gray-500 line-through'
-											: 'text-gray-900'}">{box.title}</span
-									>
+									<div class="flex flex-col">
+										<span
+											class="mb-1 text-[9px] font-medium tracking-[0.2em] text-white/30 uppercase"
+											>Шаг {i + 1}</span
+										>
+										<span
+											class="text-[15px] font-bold tracking-tight {box.isCompleted
+												? 'text-white/60 line-through'
+												: 'text-white'}">{box.title}</span
+										>
+									</div>
 								</div>
 								<span
-									class="rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold whitespace-nowrap text-gray-600"
+									class="group-hover:border-brand-blue/30 group-hover:text-brand-blue relative z-10 rounded-full border border-white/10 bg-white/5 px-6 py-2 text-[10px] font-black tracking-widest text-white/50 uppercase transition-all"
 									>{box.durationRange}</span
 								>
+
+								{#if !box.isCompleted}
+									<div
+										class="bg-brand-blue absolute top-0 right-0 bottom-0 w-1 opacity-0 transition-opacity group-hover:opacity-100"
+									></div>
+								{/if}
 							</button>
 						{/each}
 					</div>
@@ -408,55 +470,76 @@
 			</div>
 
 			<!-- Right Column: Mechanics & Advice -->
-			<div class="space-y-6">
+			<div class="space-y-10 lg:col-span-4">
 				<!-- Collaboration Mechanic -->
-				<div
-					class="glass-panel to-brand-mint/10 border-brand-mint/30 rounded-3xl bg-gradient-to-b from-white/60 p-8"
-				>
-					<h3 class="mb-4 flex items-center gap-2 text-lg font-bold text-emerald-800">
-						🕹️ Механика Взаимодействия
-					</h3>
-					<p class="leading-relaxed font-medium text-gray-800">
+				<div class="glass-panel relative overflow-hidden rounded-[40px] p-10">
+					<div
+						class="bg-brand-mint/10 absolute -top-10 -right-10 h-32 w-32 rounded-full blur-3xl"
+					></div>
+
+					<div class="mb-8">
+						<span
+							class="text-brand-mint mb-3 block text-[12px] font-black tracking-[0.2em] uppercase"
+							>Логика Взаимодействия</span
+						>
+						<h3 class="text-[15px] font-bold tracking-tight text-white">Системная Механика</h3>
+					</div>
+
+					<p class="text-lg leading-relaxed font-medium tracking-wide text-white/70">
 						{meetingData.collaboration.engagementMechanic}
 					</p>
 				</div>
 
 				<!-- Questions -->
-				<div class="glass-panel rounded-3xl p-8">
-					<h3 class="text-brand-blue mb-4 text-lg font-bold">Ключевые Вопросы</h3>
-					<ul class="space-y-3">
+				<div class="glass-panel rounded-[40px] p-10">
+					<div class="mb-8">
+						<span
+							class="text-brand-blue mb-3 block text-[12px] font-black tracking-[0.2em] uppercase"
+							>Верификация</span
+						>
+						<h3 class="text-[15px] font-bold tracking-tight text-white">Критические Точки</h3>
+					</div>
+
+					<ul class="space-y-4">
 						{#each meetingData.intentionality.keyQuestions as q, i}
 							<li>
 								<button
-									class="hover:border-brand-blue flex w-full cursor-pointer items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-4 text-left font-medium transition-all {q.isCompleted
-										? 'opacity-60 grayscale'
+									class="group flex w-full cursor-pointer items-start gap-4 rounded-3xl border border-white/5 bg-white/[0.02] p-6 text-left transition-all hover:bg-white/[0.04] {q.isCompleted
+										? 'opacity-30 grayscale'
 										: ''}"
 									onclick={() => completeQuestion(i)}
-									aria-label="Toggle question completion"
 								>
 									<div
-										class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 {q.isCompleted
-											? 'border-brand-mint bg-brand-mint'
-											: 'border-gray-300'}"
+										class="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all {q.isCompleted
+											? 'border-brand-blue bg-brand-blue'
+											: 'group-hover:border-brand-blue/50 border-white/20'}"
 									>
 										{#if q.isCompleted}
 											<svg
-												class="h-3 w-3 text-white"
+												class="h-3 w-3 text-black"
 												fill="none"
 												viewBox="0 0 24 24"
 												stroke="currentColor"
 												><path
 													stroke-linecap="round"
 													stroke-linejoin="round"
-													stroke-width="3"
+													stroke-width="5"
 													d="M5 13l4 4L19 7"
 												></path></svg
 											>
+										{:else}
+											<div class="h-1 w-1 rounded-full bg-white/20"></div>
 										{/if}
 									</div>
-									<span class="text-gray-700">
-										<span class="text-brand-blue mr-1 font-black">Q:</span>{q.text}
-									</span>
+									<div class="flex flex-col">
+										<span
+											class="text-brand-blue mb-1 text-[9px] font-medium tracking-[0.2em] uppercase"
+											>Q-{i + 1}</span
+										>
+										<span class="text-[15px] leading-relaxed font-bold tracking-wide text-white/80">
+											{q.text}
+										</span>
+									</div>
 								</button>
 							</li>
 						{/each}
@@ -464,91 +547,118 @@
 				</div>
 
 				<!-- Inclusivity Advice -->
-				<div class="glass-panel rounded-3xl border-l-4 border-l-amber-400 p-8">
-					<h3 class="mb-2 text-sm font-bold text-amber-600 uppercase">Совет по Инклюзивности</h3>
-					<p class="text-gray-700 italic">{meetingData.inclusivity.advice}</p>
+				<div
+					class="glass-panel border-l-brand-blue/50 rounded-[40px] border-l-2 bg-gradient-to-br from-amber-500/5 to-transparent p-10"
+				>
+					<span
+						class="decoration-brand-blue mb-4 block text-[12px] font-black tracking-[0.2em] text-amber-500/80 uppercase underline underline-offset-8"
+						>Процедурные Рекомендации</span
+					>
+					<p class="text-[15px] leading-relaxed font-medium tracking-wide text-white/60 italic">
+						{meetingData.inclusivity.advice}
+					</p>
 				</div>
 			</div>
 		</div>
 	{:else if currentState === 'summary' && meetingData}
-		<div class="mx-auto max-w-4xl space-y-8" in:fade>
+		<div class="mx-auto max-w-5xl space-y-12" in:fade>
 			<div class="text-center">
 				<div
-					class="bg-brand-mint/10 text-brand-mint mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full p-4"
+					class="bg-brand-blue/10 border-brand-blue/20 mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full border"
 				>
-					<svg class="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+					<svg
+						class="text-brand-blue h-10 w-10 shadow-[0_0_20px_rgba(59,130,246,0.5)]"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
 						><path
 							stroke-linecap="round"
 							stroke-linejoin="round"
-							stroke-width="2"
+							stroke-width="2.5"
 							d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
 						></path></svg
 					>
 				</div>
-				<h2 class="text-4xl font-black text-gray-900">Сессия завершена</h2>
-				<p class="mt-2 text-xl text-gray-500">Результаты вашей работы над проектом</p>
+				<h2 class="mb-4 text-6xl font-black tracking-tighter text-white">Результат Сессии</h2>
+				<p class="text-xl font-medium tracking-wide text-white/40">
+					Анализ выполнения и итогов работы движка.
+				</p>
 			</div>
 
 			<div
-				class="glass-panel grid grid-cols-1 divide-y divide-gray-200 overflow-hidden rounded-3xl md:grid-cols-2 md:divide-x md:divide-y-0"
+				class="glass-panel grid grid-cols-1 divide-y divide-white/5 overflow-hidden rounded-[40px] md:grid-cols-2 md:divide-x md:divide-y-0"
 			>
-				<div class="p-8">
-					<h3 class="mb-6 border-b pb-2 text-xl font-bold text-gray-900">✅ Реализованные этапы</h3>
-					<ul class="space-y-4">
+				<div class="p-12">
+					<div class="mb-10">
+						<span
+							class="text-brand-blue mb-2 block text-[10px] font-black tracking-[0.3em] uppercase"
+							>Метрики</span
+						>
+						<h3 class="text-2xl font-black tracking-tight text-white">Выполненные Этапы</h3>
+					</div>
+					<ul class="space-y-6">
 						{#each meetingData.structure.timeBoxes as box}
-							<li class="flex items-center gap-3">
+							<li class="flex items-center gap-5">
 								<div
-									class="flex h-6 w-6 items-center justify-center rounded-full {box.isCompleted
-										? 'bg-brand-mint text-white'
-										: 'bg-gray-100 text-gray-400'}"
+									class="flex h-8 w-8 items-center justify-center rounded-full transition-shadow {box.isCompleted
+										? 'bg-brand-blue text-black shadow-[0_0_15px_rgba(59,130,246,0.4)]'
+										: 'bg-white/5 text-white/20'}"
 								>
 									{#if box.isCompleted}
-										<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
 											><path
 												stroke-linecap="round"
 												stroke-linejoin="round"
-												stroke-width="3"
+												stroke-width="4"
 												d="M5 13l4 4L19 7"
 											></path></svg
 										>
 									{:else}
-										<div class="h-2 w-2 rounded-full bg-current"></div>
+										<div class="h-1.5 w-1.5 rounded-full bg-current"></div>
 									{/if}
 								</div>
 								<span
-									class="text-lg {box.isCompleted
-										? 'font-semibold text-gray-800'
-										: 'text-gray-400'}">{box.title}</span
+									class="text-xl tracking-tight {box.isCompleted
+										? 'font-bold text-white'
+										: 'text-white/20'}">{box.title}</span
 								>
 							</li>
 						{/each}
 					</ul>
 				</div>
-				<div class="p-8">
-					<h3 class="mb-6 border-b pb-2 text-xl font-bold text-gray-900">❓ Ответы на вопросы</h3>
-					<ul class="space-y-4">
+				<div class="p-12">
+					<div class="mb-10">
+						<span
+							class="text-brand-blue mb-2 block text-[10px] font-black tracking-[0.3em] uppercase"
+							>Верификация</span
+						>
+						<h3 class="text-2xl font-black tracking-tight text-white">Решенные Вопросы</h3>
+					</div>
+					<ul class="space-y-6">
 						{#each meetingData.intentionality.keyQuestions as q}
-							<li class="flex items-start gap-3">
+							<li class="flex items-start gap-5">
 								<div
-									class="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full {q.isCompleted
-										? 'bg-brand-blue text-white'
-										: 'bg-gray-100 text-gray-400'}"
+									class="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-shadow {q.isCompleted
+										? 'bg-brand-blue text-black shadow-[0_0_15px_rgba(59,130,246,0.4)]'
+										: 'bg-white/5 text-white/20'}"
 								>
 									{#if q.isCompleted}
-										<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"
 											><path
 												stroke-linecap="round"
 												stroke-linejoin="round"
-												stroke-width="3"
+												stroke-width="4"
 												d="M5 13l4 4L19 7"
 											></path></svg
 										>
 									{:else}
-										<div class="h-2 w-2 rounded-full bg-current"></div>
+										<div class="h-1.5 w-1.5 rounded-full bg-current"></div>
 									{/if}
 								</div>
-								<span class="text-md {q.isCompleted ? 'text-gray-800' : 'text-gray-400'}"
-									>{q.text}</span
+								<span
+									class="text-lg leading-relaxed tracking-wide {q.isCompleted
+										? 'font-medium text-white/80'
+										: 'text-white/20'}">{q.text}</span
 								>
 							</li>
 						{/each}
@@ -556,20 +666,25 @@
 				</div>
 			</div>
 
-			<div class="flex justify-center gap-4">
+			<div class="flex justify-center pt-8">
 				<button
 					onclick={restart}
-					class="from-brand-blue to-brand-mint hover:from-brand-blue hover:to-brand-blue flex transform items-center gap-3 rounded-2xl bg-gradient-to-r px-10 py-4 text-xl font-bold text-white shadow-xl transition-all hover:-translate-y-1 active:scale-95"
+					class="group bg-brand-blue relative overflow-hidden rounded-[32px] px-16 py-6 text-sm font-black tracking-[0.4em] text-white uppercase shadow-[0_0_50px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95"
 				>
-					<svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-						></path></svg
-					>
-					Новый проект
+					<span class="relative z-10 flex items-center gap-4">
+						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+							><path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="3"
+								d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+							></path></svg
+						>
+						Запустить Новый Движок
+					</span>
+					<div
+						class="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-full"
+					></div>
 				</button>
 			</div>
 		</div>
