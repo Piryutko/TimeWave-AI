@@ -1,48 +1,69 @@
-# TimeWave AI
+# TimeWave AI 💎
 
-TimeWave AI — это интеллектуальное приложение для управления встречами и собраниями, которое использует бэкенд на C# .NET API и современный фронтенд на SvelteKit. Оно интегрируется с локальной нейросетью Ollama для обработки транскрипций встреч, извлечения важнейших задач (action items) и создания кратких резюме (summary).
+[**Live Demo (Netlify)**](https://timewave-ai.netlify.app/)
 
-## Структура проекта
+---
 
-- **Бэкенд** (Корневая папка): Web API на .NET (`TimeWave AI.csproj`), управляющее основной логикой приложения. Включает в себя сервисы, такие как `AiMeetingService.cs`, которые служат интерфейсом для взаимодействия с AI-моделью.
-- **Фронтенд** (`frontend/`): Приложение на SvelteKit, обеспечивающее пользовательский интерфейс.
+## 🇷🇺 Русский (RU)
 
-## Требования для запуска
+**TimeWave AI** — это инновационный интеллектуальный планировщик встреч, разработанный для оптимизации командных обсуждений. Система автономно координирует структуру встреч, таймбоксы и динамику команды, обеспечивая максимальную продуктивность.
 
-- .NET 8.0 SDK (или новее)
+### Основные характеристики
+- **AI-планирование**: Генерация персонализированных планов встреч на основе ваших тем.
+- **Интернационализация (i18n)**: Полная поддержка Русского, Английского и Японского языков.
+- **Azure Pearl UI**: Премиальный, интуитивно понятный дизайн с эффектами стеклянного морфизма и плавными анимациями.
+- **Интерактивные механики**: Поддержка Round Robin, Popcorn и других фасилитационных техник.
+
+### Требования для запуска
 - Node.js (v18 или новее)
-- Ollama (запущенная локально с нужной языковой моделью)
-
-## Запуск приложения
-
-### Запуск бэкенда
-
-1. Откройте терминал в корневой папке проекта.
-2. Запустите .NET приложение:
-   ```bash
-   dotnet run
-   ```
 
 ### Запуск фронтенда
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-1. Откройте терминал в папке `frontend`:
-   ```bash
-   cd frontend
-   ```
-2. Установите зависимости:
-   ```bash
-   npm install
-   ```
-3. Запустите сервер разработки:
-   ```bash
-   npm run dev
-   ```
+---
 
-## Разработка
+## 🇺🇸 English (EN)
 
-- Приложение ориентировано на расширение фронтенда SvelteKit для предоставления интуитивного управления встречами.
-- Бэкенд на C# обрабатывает все запросы, интеграции с нейросетью и структурированное хранение данных.
+**TimeWave AI** is an innovative intelligent meeting planner designed to optimize team discussions. The system autonomously coordinates meeting structures, timeboxes, and team dynamics, ensuring maximum productivity.
 
-## Лицензия
+### Key Features
+- **AI Planning**: Generates personalized meeting plans based on your topics.
+- **Internationalization (i18n)**: Full support for Russian, English, and Japanese.
+- **Azure Pearl UI**: Premium, intuitive design with glassmorphism effects and smooth animations.
+- **Interactive Mechanics**: Support for Round Robin, Popcorn, and other facilitation techniques.
+
+### Run Instructions
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## 🇯🇵 日本語 (JP)
+
+**TimeWave AI** は、チームの議論を最適化するために設計された革新的なインテリジェントな会議プランナーです。システムは自律的に会議の構造、タイムボックス、チームのダイナミクスを調整し、最大限の生産性を確保します。
+
+### 主な機能
+- **AI プランニング**: トピックに基づいてパーソナライズされた会議プランを生成します。
+- **国際化 (i18n)**: ロシア語、英語、日本語を完全にサポート。
+- **Azure Pearl UI**: ガラス面効果とスムーズなアニメーションを備えたプレミアムで直感的なデザイン。
+- **インタラクティブなメカニクス**: Round Robin、Popcorn、およびその他のファシリテーション手法のサポート。
+
+### 実行手順
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## Лицензия / License
 
 MIT License
