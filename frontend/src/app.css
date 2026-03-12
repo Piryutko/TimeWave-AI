@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @plugin "@tailwindcss/typography";
@@ -14,6 +14,7 @@
   --color-glass-border: rgba(255, 255, 255, 0.1);
   --color-text-primary: #F8FAFC;
   --color-text-secondary: rgba(255, 255, 255, 0.4);
+  --color-azure-pearl: #FBFCFF;
 }
 
 .font-jakarta {
@@ -21,10 +22,9 @@
 }
 
 body {
-
   background-color: var(--color-bg-deep);
   color: var(--color-text-primary);
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
@@ -36,13 +36,9 @@ h3,
 h4,
 h5,
 h6 {
-  line-height: 1.25;
-  /* leading-tight */
-  letter-spacing: -0.025em;
-  /* tracking-tight */
+  line-height: 1.4;
+  letter-spacing: normal;
 }
-
-
 
 .glass-panel {
   background: var(--color-glass-bg);
@@ -92,9 +88,7 @@ h6 {
   display: inline-block;
 }
 
-
 ::selection {
-
   background: var(--color-accent);
   color: white;
 }
